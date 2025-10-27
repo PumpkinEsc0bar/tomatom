@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Recipe Image Uploader</title>
+</head>
+<body>
+    <h1>Завантаження картинки з вотермаркою</h1>
+    <form id="uploadForm">
+        <input type="file" name="image" accept="image/*" required>
+        <button type="submit">Завантажити та обробити</button>
+    </form>
+    <div id="status"></div>
+
+    <script>
+        const form = document.getElementById('uploadForm');
+        const statusDiv = document.getElementById('status');
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            statusDiv.textContent = 'Завантаження...';
+            
+            const formData = new FormData(form);
+            
+            // Звернення до API через проксі Nginx
+            try {
+                const response = await fetch('/api/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    statusDiv.innerHTML = `Успішно! Обробка розпочата. ID: <b>${result.id}</b>. Перевірте MinIO на порті 9001.`;
+                } else {
+                    statusDiv.textContent = `Помилка: ${result.message || 'Невідома помилка'}`;
+                }
+            } catch (error) {
+                console.error('Fetch error:', error);
+                statusDiv.textContent = 'Помилка мережі або сервера.';
+            }
+        });
+    </script>
+</body>
+</html>

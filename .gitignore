@@ -1,0 +1,7 @@
+/dist
+backend/node_modules
+.env
+*.log
+.idea
+.vscode
+*.swp
