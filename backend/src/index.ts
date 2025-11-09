@@ -127,6 +127,33 @@ app.post('/api/upload', upload.single('image'), async (req: Request, res: Respon
     }
 });
 
+app.get('/api/images/latest', async (req: Request, res: Response) => {
+    try {
+        const containerClient = blobClient.getContainerClient(PROCESSED_CONTAINER);
+        const blobs: { name: string; lastModified: Date }[] = [];
+
+        for await (const blob of containerClient.listBlobsFlat()) {
+            blobs.push({
+                name: blob.name,
+                lastModified: blob.properties.lastModified!
+            });
+        }
+
+        blobs.sort((a, b) => b.lastModified.getTime() - a.lastModified.getTime());
+
+        const latest10 = blobs.slice(0, 10).map(b => ({
+            name: b.name,
+            url: `${containerClient.url}/${b.name}`,
+            lastModified: b.lastModified
+        }));
+
+        res.json(latest10);
+    } catch (error) {
+        console.error('[API] Failed to fetch latest images:', error);
+        res.status(500).json({ error: 'Failed to fetch latest images.' });
+    }
+});
+
 // --- Graceful Shutdown ---
 process.on('SIGTERM', async () => {
     console.log('[Shutdown] SIGTERM received, closing connections...');
