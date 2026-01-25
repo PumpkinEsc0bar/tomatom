@@ -1,130 +1,105 @@
 #!/bin/bash
 set -e
 
-# =========================
-# Configuration
-# =========================
-RESOURCE_GROUP="tomatom-rg"
-LOCATION="polandcentral"
-ACR_NAME="tomatomacr7080"        # globally unique
-ACA_ENV_NAME="tomatom-env"       # Azure Container Apps Managed Environment
-BACKEND_NAME="tomatom-backend"
-FRONTEND_NAME="tomatom-frontend"
-
-# Load environment variables from .env
-if [ -f .env ]; then
-    export $(grep -v '^#' .env | xargs)
+# Load env from .env
+if [ ! -f .env ]; then
+  echo ".env not found!"
+  exit 1
 fi
+export $(grep -v '^#' .env | xargs)
 
-# =========================
-# Azure CLI check
-# =========================
-if ! command -v az &>/dev/null; then
-    echo "Azure CLI not installed!"
-    exit 1
-fi
+# Azure settings
+RG="tomatom-rg"
+ACR="tomatomacr7080"
+ENV_NAME="tomatom-env"
+BACKEND="tomatom-backend"
+FRONTEND="tomatom-frontend"
 
-# =========================
-# Azure login
-# =========================
-if ! az account show &>/dev/null; then
-    az login
-fi
+# Login
+echo "Logging in to Azure..."
+az account show >/dev/null 2>&1 || az login
+echo "Logging in to ACR..."
+az acr login --name $ACR
 
-echo "Using subscription: $(az account show --query name -o tsv)"
+# Build & push
+echo "Building backend..."
+docker build -t $ACR.azurecr.io/$BACKEND:latest ./backend
+docker push $ACR.azurecr.io/$BACKEND:latest
 
-# =========================
-# Create Resource Group
-# =========================
-az group create --name $RESOURCE_GROUP --location $LOCATION
+echo "Building frontend..."
+docker build -t $ACR.azurecr.io/$FRONTEND:latest ./frontend
+docker push $ACR.azurecr.io/$FRONTEND:latest
 
-# =========================
-# Login to ACR
-# =========================
-az acr login --name $ACR_NAME
-ACR_URL="$ACR_NAME.azurecr.io"
-ACR_USER=$(az acr credential show -n $ACR_NAME --query "username" -o tsv)
-ACR_PASSWORD=$(az acr credential show -n $ACR_NAME --query "passwords[0].value" -o tsv)
-
-# =========================
-# Build & Push Backend
-# =========================
-echo "Building backend image..."
-docker build -t $ACR_URL/backend:latest ./backend
-docker push $ACR_URL/backend:latest
-
-# =========================
-# Deploy / Update Backend ACA
-# =========================
-if az containerapp show -n $BACKEND_NAME -g $RESOURCE_GROUP &>/dev/null; then
-    echo "Updating backend containerapp..."
-    az containerapp update \
-        -n $BACKEND_NAME \
-        -g $RESOURCE_GROUP \
-        --image $ACR_URL/backend:latest
+# Backend deploy
+echo "Deploy backend..."
+if ! az containerapp show -n $BACKEND -g $RG >/dev/null 2>&1; then
+  az containerapp create \
+    --name $BACKEND \
+    --resource-group $RG \
+    --environment $ENV_NAME \
+    --image $ACR.azurecr.io/$BACKEND:latest \
+    --target-port 8080 \
+    --ingress external \
+    --min-replicas 1 \
+    --max-replicas 3 \
+    --env-vars \
+      PORT=$PORT \
+      NODE_ENV=$NODE_ENV
 else
-    echo "Creating backend containerapp..."
-    az containerapp create \
-        -n $BACKEND_NAME \
-        -g $RESOURCE_GROUP \
-        --environment $ACA_ENV_NAME \
-        --image $ACR_URL/backend:latest \
-        --ingress external \
-        --target-port 8080 \
-        --cpu 0.5 --memory 1.0Gi \
-        --min-replicas 1 --max-replicas 2 \
-        --registry-login-server $ACR_URL \
-        --registry-username $ACR_USER \
-        --registry-password $ACR_PASSWORD
+  az containerapp update \
+    --name $BACKEND \
+    --resource-group $RG \
+    --image $ACR.azurecr.io/$BACKEND:latest \
+    --set-env-vars \
+      PORT=$PORT \
+      NODE_ENV=$NODE_ENV
 fi
 
-# =========================
-# Get Backend external FQDN
-# =========================
-BACKEND_FQDN=$(az containerapp ingress show -n $BACKEND_NAME -g $RESOURCE_GROUP --query fqdn -o tsv)
-echo "Backend external FQDN: $BACKEND_FQDN"
+# Set additional backend env vars via set-env-vars
+az containerapp update \
+  --name $BACKEND \
+  --resource-group $RG \
+  --set-env-vars \
+    AZURE_STORAGE_CONNECTION_STRING="$AZURE_STORAGE_CONNECTION_STRING" \
+    EVENTHUB_NAMESPACE="$EVENTHUB_NAMESPACE" \
+    EVENTHUB_CONNECTION_STRING="$EVENTHUB_CONNECTION_STRING" \
+    RAW_CONTAINER_NAME="$RAW_CONTAINER_NAME" \
+    PROCESSED_CONTAINER_NAME="$PROCESSED_CONTAINER_NAME" \
+    EVENTHUB_NAME_UPLOADS="$EVENTHUB_NAME_UPLOADS" \
+    KAFKA_TOPIC="$KAFKA_TOPIC"
 
-# =========================
-# Build & Push Frontend with backend FQDN
-# =========================
-echo "Building frontend image with backend FQDN..."
-docker build \
-  --build-arg REACT_APP_API_URL="https://$BACKEND_FQDN" \
-  -t $ACR_URL/frontend:latest \
-  ./frontend
+# Frontend deploy
+BACKEND_FQDN=$(az containerapp show -n $BACKEND -g $RG --query properties.configuration.ingress.fqdn -o tsv)
 
-docker push $ACR_URL/frontend:latest
-
-# =========================
-# Deploy / Update Frontend ACA
-# =========================
-if az containerapp show -n $FRONTEND_NAME -g $RESOURCE_GROUP &>/dev/null; then
-    echo "Updating frontend containerapp..."
-    az containerapp update \
-        -n $FRONTEND_NAME \
-        -g $RESOURCE_GROUP \
-        --image $ACR_URL/frontend:latest
+echo "Deploy frontend..."
+if ! az containerapp show -n $FRONTEND -g $RG >/dev/null 2>&1; then
+  az containerapp create \
+    --name $FRONTEND \
+    --resource-group $RG \
+    --environment $ENV_NAME \
+    --image $ACR.azurecr.io/$FRONTEND:latest \
+    --target-port 80 \
+    --ingress external \
+    --min-replicas 1 \
+    --max-replicas 3 \
+    --env-vars \
+      BACKEND_URL="https://$BACKEND_FQDN"
 else
-    echo "Creating frontend containerapp..."
-    az containerapp create \
-        -n $FRONTEND_NAME \
-        -g $RESOURCE_GROUP \
-        --environment $ACA_ENV_NAME \
-        --image $ACR_URL/frontend:latest \
-        --ingress external \
-        --target-port 80 \
-        --cpu 0.5 --memory 1.0Gi \
-        --min-replicas 1 --max-replicas 2 \
-        --registry-login-server $ACR_URL \
-        --registry-username $ACR_USER \
-        --registry-password $ACR_PASSWORD
+  az containerapp update \
+    --name $FRONTEND \
+    --resource-group $RG \
+    --image $ACR.azurecr.io/$FRONTEND:latest \
+    --set-env-vars \
+      BACKEND_URL="https://$BACKEND_FQDN"
 fi
 
-# =========================
-# Show final URLs
-# =========================
-FRONTEND_FQDN=$(az containerapp ingress show -n $FRONTEND_NAME -g $RESOURCE_GROUP --query fqdn -o tsv)
+# Show URLs
+BE_URL=$(az containerapp show -n $BACKEND -g $RG --query properties.configuration.ingress.fqdn -o tsv)
+FE_URL=$(az containerapp show -n $FRONTEND -g $RG --query properties.configuration.ingress.fqdn -o tsv)
 
-echo "✅ DEPLOY SUCCESSFUL"
-echo "Frontend URL: https://$FRONTEND_FQDN"
-echo "Backend URL: https://$BACKEND_FQDN"
+echo "Backend: https://$BE_URL"
+echo "Frontend: https://$FE_URL"
+
+# Stream logs
+echo "Streaming backend logs..."
+az containerapp logs show -n $BACKEND -g $RG --tail 50 --follow
