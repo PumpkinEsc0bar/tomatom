@@ -133,14 +133,14 @@ if ! az containerapp show -n $FRONTEND -g $RG >/dev/null 2>&1; then
     --ingress external \
     --min-replicas 1 \
     --max-replicas 3 \
-#    --env-vars BACKEND_URL="https://$BACKEND_FQDN"
+    --env-vars BACKEND_URL="https://$BACKEND_FQDN"
 else
   echo -e "${YELLOW}Updating frontend image...${NC}"
   az containerapp update \
     --name $FRONTEND \
     --resource-group $RG \
     --image $ACR.azurecr.io/$FRONTEND:latest \
-#    --set-env-vars BACKEND_URL="https://$BACKEND_FQDN"
+    --set-env-vars BACKEND_URL="https://$BACKEND_FQDN"
 fi
 
 # -----------------------------

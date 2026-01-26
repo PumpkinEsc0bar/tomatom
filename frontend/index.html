@@ -21,7 +21,9 @@
 </div>
 
 <script>
-    const API_BASE_URL = '${REACT_APP_API_URL}';
+    const API_BASE_URL = '${REACT_APP_API_URL}'.trim() !== ''
+        ? '${REACT_APP_API_URL}'
+        : 'https://tomatom-backend.niceocean-7211c951.polandcentral.azurecontainerapps.io';
 
     const form = document.getElementById('uploadForm');
     const statusDiv = document.getElementById('status');

@@ -3,21 +3,20 @@ FROM node:20-alpine AS build
 
 WORKDIR /app
 
-# Подставляем backend FQDN через build-arg
+# backend FQDN via build-arg
 ARG REACT_APP_API_URL
 ENV REACT_APP_API_URL=$REACT_APP_API_URL
 
-# Копируем package.json / package-lock.json (если есть)
+# Copy package.json / package-lock.json (if present)
 COPY package*.json ./
 
-# Устанавливаем зависимости
 RUN npm install
 
-# Копируем весь фронтенд
+# Copy all in frontend
 COPY . .
 
-# Строим frontend (для SPA, React / Vite и т.д.)
-# Если чистый HTML, можно пропустить
+# Build frontend (SPA, React / Vite)
+# if pure HTML, skip
 # RUN npm run build
 
 # Stage 2: production nginx
@@ -25,11 +24,11 @@ FROM nginx:alpine
 
 WORKDIR /usr/share/nginx/html
 
-# Копируем index.html и nginx конфиг
 COPY index.html .
+COPY style ./style
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-# Можно передать build-arg в index.html через envsubst
+# build-arg в index.html via envsubst
 # ENV API_BASE_URL=$REACT_APP_API_URL
 RUN apk add --no-cache bash gettext \
     && envsubst '$REACT_APP_API_URL' < index.html > index.tmp.html \
