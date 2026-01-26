@@ -3,78 +3,24 @@
 <head>
     <meta charset="UTF-8">
     <title>Recipe Image Uploader</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 20px;
-        }
-        #uploadForm {
-            margin-bottom: 30px;
-        }
-        #uploadForm input[type="file"] {
-            margin-right: 10px;
-        }
-        #uploadForm button {
-            padding: 8px 16px;
-            cursor: pointer;
-        }
-        #status {
-            margin-top: 10px;
-            padding: 10px;
-            border-radius: 4px;
-        }
-        #status.success {
-            background-color: #d4edda;
-            color: #155724;
-        }
-        #status.error {
-            background-color: #f8d7da;
-            color: #721c24;
-        }
-        #latestImages {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 10px;
-        }
-        #latestImages img {
-            width: 150px;
-            height: 150px;
-            object-fit: cover;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-            cursor: pointer;
-            transition: transform 0.2s;
-        }
-        #latestImages img:hover {
-            transform: scale(1.05);
-            border-color: #888;
-        }
-        .image-container {
-            position: relative;
-        }
-        .image-date {
-            font-size: 11px;
-            color: #666;
-            text-align: center;
-            margin-top: 5px;
-        }
-    </style>
+    <link rel="stylesheet" href="style/styles.css">
 </head>
 <body>
-<h1>Upload image + watermark</h1>
-<form id="uploadForm">
-    <input type="file" name="image" accept="image/*" required>
-    <button type="submit">Upload</button>
-</form>
-<div id="status"></div>
+<div class="container">
+    <h1>Upload image + watermark</h1>
 
-<h2>Last 10 Uploaded Images</h2>
-<div id="latestImages">Loading images...</div>
+    <form id="uploadForm">
+        <input type="file" name="image" accept="image/*" required>
+        <button type="submit">Upload</button>
+    </form>
+
+    <div id="status"></div>
+
+    <h2>Last 10 Uploaded Images</h2>
+    <div id="latestImages">Loading images...</div>
+</div>
 
 <script>
-    // Подставляем backend через envsubst в Dockerfile
     const API_BASE_URL = '${REACT_APP_API_URL}';
 
     const form = document.getElementById('uploadForm');
@@ -85,6 +31,8 @@
         e.preventDefault();
 
         statusDiv.textContent = 'Uploading...';
+        statusDiv.className = '';
+        statusDiv.style.display = 'block';
 
         const formData = new FormData(form);
 
@@ -107,7 +55,8 @@
             }
         } catch (error) {
             console.error('Fetch error:', error);
-            statusDiv.textContent = 'Network or server Error.';
+            statusDiv.textContent = 'Network or server error.';
+            statusDiv.className = 'error';
         }
     });
 
