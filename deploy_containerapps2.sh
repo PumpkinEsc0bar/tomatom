@@ -38,56 +38,67 @@ echo "Building frontend..."
 docker build -t $ACR.azurecr.io/$FRONTEND:latest ./frontend
 docker push $ACR.azurecr.io/$FRONTEND:latest
 
-# -----------------------------
-# Create / update backend secrets
-# -----------------------------
-echo "Creating / updating backend secrets..."
-az containerapp secret set \
-  --name $BACKEND \
-  --resource-group $RG \
-  --secrets \
-      storage="$AZURE_STORAGE_CONNECTION_STRING" \
-      eventhubconnection="$EVENTHUB_CONNECTION_STRING"
+# ----------------------------
+# Check if backend container app exists
+# ----------------------------
+APP_EXISTS=$(az containerapp show \
+  --name "$BACKEND" \
+  --resource-group "$RG" \
+  --query "name" -o tsv || echo "")
 
-# -----------------------------
-# Deploy / Update backend
-# -----------------------------
-if ! az containerapp show -n $BACKEND -g $RG >/dev/null 2>&1; then
-  echo "Creating backend..."
+# ----------------------------
+# Create or update backend
+# ----------------------------
+if [ -z "$APP_EXISTS" ]; then
+  echo "Backend container app does not exist. Creating..."
   az containerapp create \
-    --name $BACKEND \
-    --resource-group $RG \
-    --environment $ENV_NAME \
-    --image $ACR.azurecr.io/$BACKEND:latest \
-    --target-port 8080 \
-    --ingress external \
+    --name "$BACKEND" \
+    --resource-group "$RG" \
+    --environment "$ENV_NAME" \
+    --image "$ACR.azurecr.io/$BACKEND:latest" \
+    --cpu 0.5 \
+    --memory 1.0Gi \
     --min-replicas 1 \
-    --max-replicas 3 \
-    --env-vars PORT=$PORT NODE_ENV=$NODE_ENV
-else
-  echo "Updating backend image..."
-  az containerapp update \
-    --name $BACKEND \
-    --resource-group $RG \
-    --image $ACR.azurecr.io/$BACKEND:latest \
-    --set-env-vars PORT=$PORT NODE_ENV=$NODE_ENV
-fi
-
-# Attach secrets and other env vars
-echo "Attaching secrets and env vars to backend..."
-az containerapp update \
-  --name $BACKEND \
-  --resource-group $RG \
-  --set-env-vars \
-      AZURE_STORAGE_CONNECTION_STRING="@storage" \
-      EVENTHUB_CONNECTION_STRING="@eventhubconnection" \
+    --max-replicas 2 \
+    --ingress 'external' \
+    --target-port "$PORT" \
+    --env-vars \
+      AZURE_STORAGE_CONNECTION_STRING="$AZURE_STORAGE_CONNECTION_STRING" \
       EVENTHUB_NAMESPACE="$EVENTHUB_NAMESPACE" \
+      EVENTHUB_CONNECTION_STRING="$EVENTHUB_CONNECTION_STRING" \
       RAW_CONTAINER_NAME="$RAW_CONTAINER_NAME" \
       PROCESSED_CONTAINER_NAME="$PROCESSED_CONTAINER_NAME" \
       EVENTHUB_NAME_UPLOADS="$EVENTHUB_NAME_UPLOADS" \
       KAFKA_TOPIC="$KAFKA_TOPIC" \
+      NODE_ENV="$NODE_ENV" \
       PORT="$PORT" \
-      NODE_ENV="$NODE_ENV"
+    --yes
+  echo "Backend created successfully."
+else
+  echo "Backend container app exists. Updating image and env variables..."
+
+  # Update image and resources
+  az containerapp update \
+    --name "$BACKEND" \
+    --resource-group "$RG" \
+    --image "$ACR.azurecr.io/$BACKEND:latest" \
+    --cpu 0.5 \
+    --memory 1.0Gi \
+    --min-replicas 1 \
+    --max-replicas 2 \
+    --set-env-vars \
+      AZURE_STORAGE_CONNECTION_STRING="$AZURE_STORAGE_CONNECTION_STRING" \
+      EVENTHUB_NAMESPACE="$EVENTHUB_NAMESPACE" \
+      EVENTHUB_CONNECTION_STRING="$EVENTHUB_CONNECTION_STRING" \
+      RAW_CONTAINER_NAME="$RAW_CONTAINER_NAME" \
+      PROCESSED_CONTAINER_NAME="$PROCESSED_CONTAINER_NAME" \
+      EVENTHUB_NAME_UPLOADS="$EVENTHUB_NAME_UPLOADS" \
+      KAFKA_TOPIC="$KAFKA_TOPIC" \
+      NODE_ENV="$NODE_ENV" \
+      PORT="$PORT"
+
+  echo "Backend updated successfully."
+fi
 
 # -----------------------------
 # Deploy / Update frontend
@@ -127,10 +138,7 @@ echo "Frontend URL: https://$FE_URL"
 # Check backend environment variables
 # -----------------------------
 echo "Checking backend environment variables..."
-az containerapp show \
-  --name $BACKEND \
-  --resource-group $RG \
-  --query properties.configuration.environmentVariables
+
 
 # -----------------------------
 # Wait for backend readiness

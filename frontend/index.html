@@ -4,9 +4,44 @@
     <meta charset="UTF-8">
     <title>Recipe Image Uploader</title>
     <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        #uploadForm {
+            margin-bottom: 30px;
+        }
+        #uploadForm input[type="file"] {
+            margin-right: 10px;
+        }
+        #uploadForm button {
+            padding: 8px 16px;
+            cursor: pointer;
+        }
+        #status {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        #status.success {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        #status.error {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        #latestImages {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
         #latestImages img {
             width: 150px;
-            margin: 5px;
+            height: 150px;
+            object-fit: cover;
             border: 1px solid #ccc;
             border-radius: 4px;
             cursor: pointer;
@@ -15,6 +50,15 @@
         #latestImages img:hover {
             transform: scale(1.05);
             border-color: #888;
+        }
+        .image-container {
+            position: relative;
+        }
+        .image-date {
+            font-size: 11px;
+            color: #666;
+            text-align: center;
+            margin-top: 5px;
         }
     </style>
 </head>
@@ -27,7 +71,7 @@
 <div id="status"></div>
 
 <h2>Last 10 Uploaded Images</h2>
-<div id="latestImages"></div>
+<div id="latestImages">Loading images...</div>
 
 <script>
     // Подставляем backend через envsubst в Dockerfile
@@ -54,10 +98,12 @@
 
             if (response.ok) {
                 statusDiv.innerHTML = `Success! ID: <b>${result.id}</b>`;
+                statusDiv.className = 'success';
                 form.reset();
                 fetchLatestImages();
             } else {
                 statusDiv.textContent = `Error: ${result.message || 'Unknown error'}`;
+                statusDiv.className = 'error';
             }
         } catch (error) {
             console.error('Fetch error:', error);
@@ -73,12 +119,28 @@
             const images = await response.json();
             latestImagesDiv.innerHTML = '';
 
+            if (images.length === 0) {
+                latestImagesDiv.textContent = 'No images uploaded yet.';
+                return;
+            }
+
             images.forEach(img => {
+                const container = document.createElement('div');
+                container.className = 'image-container';
+
                 const imgEl = document.createElement('img');
                 imgEl.src = img.url;
-                imgEl.title = new Date(img.lastModified).toLocaleString();
+                imgEl.alt = img.name;
+                imgEl.title = `Click to open - ${new Date(img.lastModified).toLocaleString()}`;
                 imgEl.addEventListener('click', () => window.open(img.url, '_blank'));
-                latestImagesDiv.appendChild(imgEl);
+
+                const dateEl = document.createElement('div');
+                dateEl.className = 'image-date';
+                dateEl.textContent = new Date(img.lastModified).toLocaleString();
+
+                container.appendChild(imgEl);
+                container.appendChild(dateEl);
+                latestImagesDiv.appendChild(container);
             });
         } catch (error) {
             console.error('Error fetching latest images:', error);
