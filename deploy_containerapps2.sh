@@ -2,10 +2,21 @@
 set -e
 
 # -----------------------------
+# Color definitions
+# -----------------------------
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+MAGENTA='\033[0;35m'
+CYAN='\033[0;36m'
+NC='\033[0m' # No Color
+
+# -----------------------------
 # Load .env
 # -----------------------------
 if [ ! -f .env ]; then
-  echo ".env not found!"
+  echo -e "${RED}.env not found!${NC}"
   exit 1
 fi
 export $(grep -v '^#' .env | xargs)
@@ -22,21 +33,17 @@ FRONTEND="tomatom-frontend"
 # -----------------------------
 # Login
 # -----------------------------
-echo "Logging in to Azure..."
+echo -e "${CYAN}Logging in to Azure...${NC}"
 az account show >/dev/null 2>&1 || az login
-echo "Logging in to ACR..."
+echo -e "${CYAN}Logging in to ACR...${NC}"
 az acr login --name $ACR
 
 # -----------------------------
 # Build & push Docker images
 # -----------------------------
-echo "Building backend..."
+echo -e "${BLUE}Building backend...${NC}"
 docker build -t $ACR.azurecr.io/$BACKEND:latest ./backend
 docker push $ACR.azurecr.io/$BACKEND:latest
-
-echo "Building frontend..."
-docker build -t $ACR.azurecr.io/$FRONTEND:latest ./frontend
-docker push $ACR.azurecr.io/$FRONTEND:latest
 
 # ----------------------------
 # Check if backend container app exists
@@ -50,7 +57,7 @@ APP_EXISTS=$(az containerapp show \
 # Create or update backend
 # ----------------------------
 if [ -z "$APP_EXISTS" ]; then
-  echo "Backend container app does not exist. Creating..."
+  echo -e "${YELLOW}Backend container app does not exist. Creating...${NC}"
   az containerapp create \
     --name "$BACKEND" \
     --resource-group "$RG" \
@@ -73,9 +80,9 @@ if [ -z "$APP_EXISTS" ]; then
       NODE_ENV="$NODE_ENV" \
       PORT="$PORT" \
     --yes
-  echo "Backend created successfully."
+  echo -e "${GREEN}Backend created successfully.${NC}"
 else
-  echo "Backend container app exists. Updating image and env variables..."
+  echo -e "${YELLOW}Backend container app exists. Updating image and env variables...${NC}"
 
   # Update image and resources
   az containerapp update \
@@ -97,16 +104,26 @@ else
       NODE_ENV="$NODE_ENV" \
       PORT="$PORT"
 
-  echo "Backend updated successfully."
+  echo -e "${GREEN}Backend updated successfully.${NC}"
 fi
 
 # -----------------------------
 # Deploy / Update frontend
 # -----------------------------
 BACKEND_FQDN=$(az containerapp show -n $BACKEND -g $RG --query properties.configuration.ingress.fqdn -o tsv)
+echo -e "${MAGENTA}Backend FQDN: $BACKEND_FQDN${NC}"
+
+# -----------------------------
+# Build & push frontend Docker image with backend URL
+# -----------------------------
+echo -e "${BLUE}Building frontend...${NC}"
+docker build \
+  --build-arg REACT_APP_API_URL="https://$BACKEND_FQDN" \
+  -t $ACR.azurecr.io/$FRONTEND:latest ./frontend
+docker push $ACR.azurecr.io/$FRONTEND:latest
 
 if ! az containerapp show -n $FRONTEND -g $RG >/dev/null 2>&1; then
-  echo "Creating frontend..."
+  echo -e "${YELLOW}Creating frontend...${NC}"
   az containerapp create \
     --name $FRONTEND \
     --resource-group $RG \
@@ -116,14 +133,14 @@ if ! az containerapp show -n $FRONTEND -g $RG >/dev/null 2>&1; then
     --ingress external \
     --min-replicas 1 \
     --max-replicas 3 \
-    --env-vars BACKEND_URL="https://$BACKEND_FQDN"
+#    --env-vars BACKEND_URL="https://$BACKEND_FQDN"
 else
-  echo "Updating frontend image..."
+  echo -e "${YELLOW}Updating frontend image...${NC}"
   az containerapp update \
     --name $FRONTEND \
     --resource-group $RG \
     --image $ACR.azurecr.io/$FRONTEND:latest \
-    --set-env-vars BACKEND_URL="https://$BACKEND_FQDN"
+#    --set-env-vars BACKEND_URL="https://$BACKEND_FQDN"
 fi
 
 # -----------------------------
@@ -131,26 +148,20 @@ fi
 # -----------------------------
 BE_URL=$(az containerapp show -n $BACKEND -g $RG --query properties.configuration.ingress.fqdn -o tsv)
 FE_URL=$(az containerapp show -n $FRONTEND -g $RG --query properties.configuration.ingress.fqdn -o tsv)
-echo "Backend URL: https://$BE_URL"
-echo "Frontend URL: https://$FE_URL"
-
-# -----------------------------
-# Check backend environment variables
-# -----------------------------
-echo "Checking backend environment variables..."
-
+echo -e "${GREEN}Backend URL: https://$BE_URL${NC}"
+echo -e "${GREEN}Frontend URL: https://$FE_URL${NC}"
 
 # -----------------------------
 # Wait for backend readiness
 # -----------------------------
-#echo "Checking backend readiness..."
+#echo -e "${CYAN}Checking backend readiness...${NC}"
 #for i in {1..12}; do
 #    HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" https://$BE_URL/health || echo "000")
 #    if [ "$HTTP_CODE" == "200" ]; then
-#        echo "Backend is UP ✅"
+#        echo -e "${GREEN}Backend is UP ✅${NC}"
 #        break
 #    else
-#        echo "Backend not ready yet (HTTP $HTTP_CODE), waiting 5s..."
+#        echo -e "${YELLOW}Backend not ready yet (HTTP $HTTP_CODE), waiting 5s...${NC}"
 #        sleep 5
 #    fi
 #done
@@ -160,13 +171,13 @@ echo "Checking backend environment variables..."
 ## -----------------------------
 #HTTP_CODE_FE=$(curl -s -o /dev/null -w "%{http_code}" https://$FE_URL/ || echo "000")
 #if [ "$HTTP_CODE_FE" == "200" ]; then
-#    echo "Frontend is UP ✅"
+#    echo -e "${GREEN}Frontend is UP ✅${NC}"
 #else
-#    echo "Frontend is DOWN ❌"
+#    echo -e "${RED}Frontend is DOWN ❌${NC}"
 #fi
 
 # -----------------------------
 # Stream backend logs
 # -----------------------------
-echo "Streaming backend logs..."
-az containerapp logs show -n $BACKEND -g $RG --tail 50 --follow
+#echo -e "${CYAN}Streaming backend logs...${NC}"
+#az containerapp logs show -n $BACKEND -g $RG --tail 50 --follow
