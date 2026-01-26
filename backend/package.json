@@ -6,7 +6,6 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
-    "@azure/storage-blob": "^12.17.0",
     "@types/multer": "^1.4.11",
     "express": "^4.19.2",
     "kafkajs": "^2.2.4",

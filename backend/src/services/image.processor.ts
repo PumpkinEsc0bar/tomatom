@@ -1,55 +1,53 @@
 import sharp = require('sharp');
-import { AzureBlobClient, downloadBlob, uploadBlob } from './blob.service';
+import { MinioClient } from './minio.service';
 
 interface ImageEvent {
     imageId: string;
     mimeType: string;
-    rawContainer: string;
-    processedContainer: string;
+    rawBucket: string;
+    processedBucket: string;
 }
 
-export async function processImageWithWatermark(
-    client: AzureBlobClient,
-    event: ImageEvent
-): Promise<void> {
-    const { imageId, rawContainer, processedContainer } = event;
+export async function processImageWithWatermark(client: MinioClient, event: ImageEvent) {
+    const { imageId, rawBucket, processedBucket } = event;
+    const objectName = imageId;
 
-    console.log(`[Processor] Processing image: ${imageId}`);
-    console.log(`[Processor] Raw container: ${rawContainer}`);
-    console.log(`[Processor] Processed container: ${processedContainer}`);
+    console.log(`event ${imageId}\n${rawBucket}\n${processedBucket}`);
 
     try {
-        // Download blob from Azure Blob Storage
-        const imageBuffer = await downloadBlob(client, rawContainer, imageId);
-        console.log(`[Processor] Downloaded image: ${imageId}, size: ${imageBuffer.length} bytes`);
+        // download MinIO
+        const stream = await client.getObject(rawBucket, objectName);
+        const imageBuffer = await streamToBuffer(stream);
 
-        // Process image with Sharp
+        // sharp
         const watermarkedBuffer = await sharp(imageBuffer)
             .resize({ width: 800, withoutEnlargement: true })
-            .composite([{
-                input: Buffer.from(
-                    '<svg><text x="50%" y="90%" font-size="20" fill="rgba(255,255,255,0.5)" text-anchor="middle">Recipe Manager</text></svg>'
-                ),
+            .composite([{ // watermark
+                input: Buffer.from('<svg><text x="50%" y="90%" font-size="20" fill="rgba(255,255,255,0.5)" text-anchor="middle">Recipe Manager</text></svg>'),
                 gravity: 'south',
             }])
             .toFormat('jpeg')
             .toBuffer();
 
-        console.log(`[Processor] Watermarked image created, size: ${watermarkedBuffer.length} bytes`);
+        // upload MinIO
+        const processedObjectName = `watermarked-${objectName}.jpeg`;
+        await client.putObject(processedBucket, processedObjectName, watermarkedBuffer, watermarkedBuffer.length, {
+            'Content-Type': 'image/jpeg'
+        });
 
-        // Upload processed blob back to Azure
-        const processedBlobName = `watermarked-${imageId}.jpeg`;
-        await uploadBlob(
-            client,
-            processedContainer,
-            processedBlobName,
-            watermarkedBuffer,
-            'image/jpeg'
-        );
+        console.log(`[Processor] Successfully watermarked and uploaded: ${processedObjectName}`);
 
-        console.log(`[Processor] Successfully watermarked and uploaded: ${processedBlobName}`);
     } catch (error) {
         console.error(`[Processor] Failed to process image ${imageId}:`, error);
         throw error;
     }
+}
+
+function streamToBuffer(stream: NodeJS.ReadableStream): Promise<Buffer> {
+    return new Promise((resolve, reject) => {
+        const chunks: any[] = [];
+        stream.on('data', chunk => chunks.push(chunk));
+        stream.on('error', reject);
+        stream.on('end', () => resolve(Buffer.concat(chunks)));
+    });
 }
