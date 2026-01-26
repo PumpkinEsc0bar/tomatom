@@ -3,45 +3,101 @@
 <head>
     <meta charset="UTF-8">
     <title>Recipe Image Uploader</title>
+    <link rel="stylesheet" href="style/styles.css">
 </head>
 <body>
-    <h1>Завантаження картинки з вотермаркою</h1>
+<div class="container">
+    <h1>Upload image + watermark</h1>
+
     <form id="uploadForm">
         <input type="file" name="image" accept="image/*" required>
-        <button type="submit">Завантажити та обробити</button>
+        <button type="submit">Upload</button>
     </form>
+
     <div id="status"></div>
 
-    <script>
-        const form = document.getElementById('uploadForm');
-        const statusDiv = document.getElementById('status');
+    <h2>Last 10 Uploaded Images</h2>
+    <div id="latestImages">Loading images...</div>
+</div>
 
-        form.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            
-            statusDiv.textContent = 'Завантаження...';
-            
-            const formData = new FormData(form);
-            
-            // Звернення до API через проксі Nginx
-            try {
-                const response = await fetch('/api/upload', {
-                    method: 'POST',
-                    body: formData
-                });
+<script>
+    const API_BASE_URL = '${REACT_APP_API_URL}';
 
-                const result = await response.json();
+    const form = document.getElementById('uploadForm');
+    const statusDiv = document.getElementById('status');
+    const latestImagesDiv = document.getElementById('latestImages');
 
-                if (response.ok) {
-                    statusDiv.innerHTML = `Успішно! Обробка розпочата. ID: <b>${result.id}</b>. Перевірте MinIO на порті 9001.`;
-                } else {
-                    statusDiv.textContent = `Помилка: ${result.message || 'Невідома помилка'}`;
-                }
-            } catch (error) {
-                console.error('Fetch error:', error);
-                statusDiv.textContent = 'Помилка мережі або сервера.';
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        statusDiv.textContent = 'Uploading...';
+        statusDiv.className = '';
+        statusDiv.style.display = 'block';
+
+        const formData = new FormData(form);
+
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/upload`, {
+                method: 'POST',
+                body: formData
+            });
+
+            const result = await response.json();
+
+            if (response.ok) {
+                statusDiv.innerHTML = `Success! ID: <b>${result.id}</b>`;
+                statusDiv.className = 'success';
+                form.reset();
+                fetchLatestImages();
+            } else {
+                statusDiv.textContent = `Error: ${result.message || 'Unknown error'}`;
+                statusDiv.className = 'error';
             }
-        });
-    </script>
+        } catch (error) {
+            console.error('Fetch error:', error);
+            statusDiv.textContent = 'Network or server error.';
+            statusDiv.className = 'error';
+        }
+    });
+
+    async function fetchLatestImages() {
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/images/latest`);
+            if (!response.ok) throw new Error('Failed to fetch latest images');
+
+            const images = await response.json();
+            latestImagesDiv.innerHTML = '';
+
+            if (images.length === 0) {
+                latestImagesDiv.textContent = 'No images uploaded yet.';
+                return;
+            }
+
+            images.forEach(img => {
+                const container = document.createElement('div');
+                container.className = 'image-container';
+
+                const imgEl = document.createElement('img');
+                imgEl.src = img.url;
+                imgEl.alt = img.name;
+                imgEl.title = `Click to open - ${new Date(img.lastModified).toLocaleString()}`;
+                imgEl.addEventListener('click', () => window.open(img.url, '_blank'));
+
+                const dateEl = document.createElement('div');
+                dateEl.className = 'image-date';
+                dateEl.textContent = new Date(img.lastModified).toLocaleString();
+
+                container.appendChild(imgEl);
+                container.appendChild(dateEl);
+                latestImagesDiv.appendChild(container);
+            });
+        } catch (error) {
+            console.error('Error fetching latest images:', error);
+            latestImagesDiv.textContent = 'Failed to load images.';
+        }
+    }
+
+    fetchLatestImages();
+</script>
 </body>
 </html>
